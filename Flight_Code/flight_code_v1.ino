@@ -9,13 +9,16 @@
 // ATTENTION !!!!!!!!!
 //
 
-float TIMESTEP = 0.1; // s
+float TIMESTEP = 0.05; // s
 float MASS = 0.650; // kg
 float GRAVITY = -9.80; // m/s/s
 float TARGET_APOGEE = 254.508; //  m
+float DRY_MASS = 0.650; // kg
+float DRY_WEIGHT = DRY_MASS * GRAVITY; // N
 
+float SEARCH_FOR = 100.0f; // milliseconds, how long to stay in loop looking for ideal cd before saving state and cycling through rest of state machine
 float OLD_DATA = 1.0f; // seconds, any sensor data older than this is discarded
-int ARMING_DELAY = 10.0f; // how long, in seconds, between when the flight computer is turned on and when it should be ready on the launchpad
+int ARMING_DELAY = 5.0f; // how long, in seconds, between when the flight computer is turned on and when it should be ready on the launchpad
 float TAKEOFF_THRESHOLD = 10.0f; // m/s,  when we go faster than this, computer thinks we have tacken off
 float ACCELERATION_SAMPLE_TIME = 0.5f; // seconds, how long between acceleration samples when detecting motor burnout 
 float BURNOUT_ACCELERATION_THRESHOLD = -8.0f; // m/s/s, when acceleration is more negative than this, computer thinks motor has burned out
@@ -25,40 +28,77 @@ float MAX_CD = 0.00521f;
 
 float MAX_ERROR = 1.0f; // m
 
+float VELOCITY_DELTA_T = 0.1f; //how many seconds between velocity update cycles
+
 Servo airbrakes;
+float deploy_angle = 0.0f;
 
 float apogee_finder(float v, float a, float d){
-    float weight = MASS * GRAVITY;
     float cd = d;
     while (v > 0){
         float drag_force = -(v * v) * cd;
-        float acceleration = (drag_force + weight)/MASS;
+        float acceleration = (drag_force + DRY_WEIGHT)/MASS;
         a += v * TIMESTEP;
         v += acceleration * TIMESTEP;
     }
+    
     return (a);
 }
 
-
+bool still_running = false;
+float max_cd = MAX_CD;
+float min_cd = MIN_CD;
+float cd = 0.0f;
+float v_running;
+float a_running;
+float target_alt;
+float alt_finder(){
+    float a = -0.05;
+    //float b = TARGET_APOGEE;
+    return a * (a_running - TARGET_APOGEE) + TARGET_APOGEE;
+}
 float cd_finder(float velocity, float altitude){
-    float max_cd = MAX_CD;
-    float min_cd = MIN_CD;
-    float cd = 0.0f;
+    if(!still_running){
+        max_cd = MAX_CD;
+        min_cd = MIN_CD;
+        cd = 0.0f;
+        v_running = velocity;
+        a_running = altitude;
+        target_alt = alt_finder();
+    }
+    float t = millis();
     //int i = 0;
+    
+    if(apogee_finder(v_running, a_running, min_cd) < target_alt){
+        return min_cd;
+    }
+    else if (apogee_finder(v_running, a_running, max_cd) > target_alt){
+        return max_cd;
+    }
     while(true){
         //i ++;
         cd = (min_cd + max_cd)/2;
         //Serial.println("????");
-        float alt = apogee_finder(velocity, altitude, cd);
+        
+        float alt = apogee_finder(v_running, a_running, cd);
         //Serial.println(alt);
-        if (abs(alt-TARGET_APOGEE) < MAX_ERROR){
+        if (abs(alt-target_alt) < MAX_ERROR){
+            still_running = false;
+            //Serial.println("converged");
             break;
         }
-        if (alt < TARGET_APOGEE){
+        if (alt < target_alt){
             max_cd = cd;
         }
         else{
             min_cd = cd;
+        }
+
+        if(millis() - t > SEARCH_FOR){ // make sure not to get hung up in this loop
+            still_running = true;
+            //Serial.println("pass through");
+            return deploy_angle;
+            break;
         }
     }
     //Serial.println(i);
@@ -90,13 +130,17 @@ void timekeeper(){ // flight version of timekeeper
     }
 }
 
+
 //---------------------------------------
 //              Sensor Refresh
 //---------------------------------------
 
 float altitude = 0.0f;
-float previous_altitudes[20];
-float altitude_times[20];
+float previous_altitude = 0.0f;
+float previous_vel_time = 0.0f;
+
+float previous_altitudes[5];
+//float altitude_times[20];
 int altitude_index = 0;
 float velocity = 0.0f;
 #if HITL // NOT flight software
@@ -104,60 +148,61 @@ float velocity = 0.0f;
         
         if(Serial.available()){
             //Serial.print("hi");
-            previous_altitudes[altitude_index] = Serial.readStringUntil('\t').toFloat();
-            altitude = previous_altitudes[altitude_index];
-            //Serial.println(altitude);
-            altitude_times[altitude_index] = time;
-            //int i = altitude_index;
-            int i_next;
-            if(altitude_index == 19){
-                i_next = 0;
-            }
-            else{
-                i_next = altitude_index + 1;
-            }
-            //use change in altitude from between most current and oldest stored altitude value to calculate velocity
-            velocity = (previous_altitudes[altitude_index] - previous_altitudes[i_next]) / (altitude_times[altitude_index] - altitude_times[i_next]);
             
-            /*              DEPRECIATED
-            int tot = 0;
-            int i = altitude_index;
-            int i_next;
-            int initial = i;
-            velocity = 0.0;
-            while(!(tot > 0 && i == initial)){ //shitty averaging code
-                if(i > 0){
-                    i_next = i - 1;
-                } else{
-                    i_next = 9;
-                }
-                if(time - altitude_times[i] < OLD_DATA && time - altitude_times[i_next] < OLD_DATA){
-                    tot ++;
-                    velocity += (previous_altitudes[i] - previous_altitudes[i_next]) / (altitude_times[i] - altitude_times[i_next]);
-                }
-                i --;
-                if(i < 0){
-                    i = 9;
-                }
+            //previous_altitudes[altitude_index] = Serial.readStringUntil('\t').toFloat();
+            altitude = Serial.readStringUntil(':').toFloat();
+            
+            // use average of recent altitudes to smooth out sensor noise
+            float tot = 0;
+            for(int i = 0; i < 5; i ++){
+                tot += previous_altitudes[i];
             }
-            */
-
-            //Serial.println(tot);
-            //velocity = velocity / tot; // Average all velocities of recent data points
-
+            //altitude = tot/5;  
+            
             altitude_index ++;
-            if(altitude_index > 19){
+            if(altitude_index > 5){
                 altitude_index = 0;
             }
+
+            //calculate velocity
+            if(time - previous_vel_time > VELOCITY_DELTA_T){
+                velocity = (altitude - previous_altitude) / (time - previous_vel_time);
+                previous_altitude = altitude;
+                previous_vel_time = time;
+                //Serial.println(altitude);
+            }
+
+
             while(Serial.available()){
                 Serial.read();
             }
-            Serial.println(altitude);
+            //Serial.println(altitude);
         }
         
     }
 #else // flight software
     void sensor_refreah(){
+        
+    }
+#endif
+
+//-----------------------------------------------
+//              DATA LOGGER!
+//-----------------------------------------------
+
+float log_frequency = 0.05f; // how often data is logged, seconds
+float last_log_time = 0.0f;
+
+#if HITL
+    void data_log(){
+        if(time - last_log_time > log_frequency){
+            Serial.println(deploy_angle);
+
+            last_log_time = time;
+        }
+    }
+#else
+    void data_log(){
         
     }
 #endif
@@ -176,12 +221,13 @@ void wait_for_arming(){
         began_waiting_for_arming = time;
     }
     if(time - began_waiting_for_arming > ARMING_DELAY){
-        for(int i = 0; i < 20; i ++){
-            altitude_times[i] = time;
-        }
+
+        //for(int i = 0; i < 20; i ++){     --old, unnecesary code
+        //    altitude_times[i] = time;
+        //}
 
         state ++;
-        Serial.println(state);
+        //Serial.println(state);
     }
 }
 
@@ -194,7 +240,7 @@ void wait_for_ignition(){
     if(velocity > TAKEOFF_THRESHOLD){
         previous_velocity = velocity;
         state ++;
-        Serial.println(state);
+        //Serial.println(state);
     }
 }
 
@@ -212,32 +258,32 @@ void wait_for_burnout(){
     }
     if(acceleration < BURNOUT_ACCELERATION_THRESHOLD){
         state ++;
-        Serial.println(state);
+        //Serial.println(state);
     }
 }
 
 //==============================================
 
-float deploy_angle = 0.0f;
+
 
 void apogee_correction(){
     float a = -0.00000407762;
     float b = 1.54521;
     float c = -0.0009436;
-    Serial.println(velocity);
-    Serial.println(altitude);
+    //Serial.println(velocity);
+    //Serial.println(altitude);
     float cd = -cd_finder(velocity, altitude);
-    Serial.println(cd);
+    //Serial.println(cd);
     deploy_angle = pow((cd - c) / a, 1/b);
     //airbrakes.write(deploy_angle);
-    Serial.println(deploy_angle);
+    //Serial.println(deploy_angle);
     //cd = a * pow(deploy_angle, b) + c
 }
 
 //==============================================
 
 void setup(){
-    Serial.begin(230400);
+    Serial.begin(115200);
     Serial.setTimeout(1);
     Serial.println("testing...");
     /*
@@ -259,6 +305,7 @@ void setup(){
 void loop(){
     timekeeper();
     sensor_refresh();
+    data_log();
     if(state == 0){
         wait_for_arming();        
     }
@@ -271,4 +318,5 @@ void loop(){
     else if(state == 3){
         apogee_correction();
     }
+    delay(5);
 }

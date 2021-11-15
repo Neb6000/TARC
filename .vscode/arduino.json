@@ -2,6 +2,6 @@
     "configuration": "cpu=atmega328old",
     "board": "arduino:avr:nano",
     "sketch": "Flight_Code\\flight_code_v1.ino",
-    "port": "COM4",
+    "port": "COM5",
     "programmer": "arduino:avrispmkii"
 }
