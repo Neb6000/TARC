@@ -52,7 +52,7 @@ float cd = 0.0f;
 float v_running;
 float a_running;
 float target_alt;
-float alt_finder(){
+float alt_finder(){ // prevents overshoot by making target altitude decrease linearly with flight altitude, equalling actual target altitude at that altitude
     float a = -0.05;
     //float b = TARGET_APOGEE;
     return a * (a_running - TARGET_APOGEE) + TARGET_APOGEE;
@@ -76,15 +76,12 @@ float cd_finder(float velocity, float altitude){
         return max_cd;
     }
     while(true){
-        //i ++;
+
         cd = (min_cd + max_cd)/2;
-        //Serial.println("????");
-        
         float alt = apogee_finder(v_running, a_running, cd);
-        //Serial.println(alt);
-        if (abs(alt-target_alt) < MAX_ERROR){
+
+        if (abs(alt-target_alt) < MAX_ERROR){ //converged
             still_running = false;
-            //Serial.println("converged");
             break;
         }
         if (alt < target_alt){
@@ -96,12 +93,10 @@ float cd_finder(float velocity, float altitude){
 
         if(millis() - t > SEARCH_FOR){ // make sure not to get hung up in this loop
             still_running = true;
-            //Serial.println("pass through");
             return deploy_angle;
             break;
         }
     }
-    //Serial.println(i);
     return cd;
 }
 
@@ -222,10 +217,6 @@ void wait_for_arming(){
     }
     if(time - began_waiting_for_arming > ARMING_DELAY){
 
-        //for(int i = 0; i < 20; i ++){     --old, unnecesary code
-        //    altitude_times[i] = time;
-        //}
-
         state ++;
         //Serial.println(state);
     }
@@ -270,14 +261,10 @@ void apogee_correction(){
     float a = -0.00000407762;
     float b = 1.54521;
     float c = -0.0009436;
-    //Serial.println(velocity);
-    //Serial.println(altitude);
     float cd = -cd_finder(velocity, altitude);
-    //Serial.println(cd);
-    deploy_angle = pow((cd - c) / a, 1/b);
+    deploy_angle = pow((cd - c) / a, 1/b); //cd = a * pow(deploy_angle, b) + c
     //airbrakes.write(deploy_angle);
-    //Serial.println(deploy_angle);
-    //cd = a * pow(deploy_angle, b) + c
+    
 }
 
 //==============================================
@@ -285,17 +272,6 @@ void apogee_correction(){
 void setup(){
     Serial.begin(115200);
     Serial.setTimeout(1);
-    Serial.println("testing...");
-    /*
-    Serial.println(cd_finder(84.0, 43.0));
-
-    float a = -0.00000407762;
-    float b = 1.54521;
-    float c = -0.0009436;
-    float cd = -cd_finder(84.0, 43.0);
-    Serial.println(pow((cd - c) / a, 1/b));
-    */
-
     //airbrakes.attach(9);
     delay(1000);
 }
