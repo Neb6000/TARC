@@ -14,9 +14,9 @@ TARGET_APOGEE = 254.508 # m
 MIN_CD = 0.000944
 MAX_CD = 0.00521
 
-MAX_ERROR = 0.01 # m
+MAX_ERROR = 1 # m
 
-
+DELAY = 0.9 # s, time between commanded angle and actual angle
 
 def apogee_finder(velocity, altitude, cd):
     #time = 0
@@ -31,7 +31,7 @@ def apogee_finder(velocity, altitude, cd):
 
 
 def alt_finder(alt):
-    a = -0.05
+    a = 0 #-0.05
     return a * (alt - TARGET_APOGEE) + TARGET_APOGEE
 
 def cd_finder(velocity, altitude):
@@ -94,12 +94,15 @@ mass = 0.650 # kg
 force = 0
 altitude = 0
 velocity = 0
-deploy_angle = 0
+deploy_angle = [0]
+deploy_time = [0]
+commanded_angle = 0
+actual_angle = 0
 def calc_drag():
     a = -0.00000407762
     b = 1.54521
     c = -0.0009436
-    cd = a * pow(deploy_angle, b) + c
+    cd = a * pow(actual_angle, b) + c
     return cd * pow(velocity, 2)
 
 current_time = 0
@@ -127,8 +130,9 @@ def wait_for_liftoff():
         print(state)
 
 def initialize():
-    global begins, state
+    global begins, state, deploy_time
     begins = current_time
+    deploy_time[0] = current_time
     state += 1
     print(state)
 
@@ -141,6 +145,15 @@ def motor_burn():
         state += 1
         print(state)
 
+
+def angle_fuzzer():
+    global commanded_angle, actual_angle
+    if current_time - deploy_time[0] > DELAY:
+        commanded_angle = deploy_angle[0]
+        deploy_angle.pop(0)
+        deploy_time.pop(0)
+    actual_angle = commanded_angle
+
 def active_control():
     global deploy_angle
     a = -0.00000407762
@@ -148,14 +161,17 @@ def active_control():
     c = -0.0009436
     cd = -cd_finder(velocity, altitude)
     dep = pow((cd - c) / a, 1/b)
+    dep_angle = 0
     if dep < 0:
-        deploy_angle = 0
+        dep_angle = 0
     elif dep > 90:
-        deploy_angle = 90
+        dep_angle = 90
     else:
-        deploy_angle = dep
+        dep_angle = dep
+    deploy_angle.append(dep_angle)
+    deploy_time.append(current_time)
+    angle_fuzzer()
 
-    
 
 max_alt = 0
 def physics():
@@ -183,13 +199,12 @@ def update(i):
         if velocity < 0:
             print(max_alt)
             x = 231231/0
-
-    #send_data()
+    #angle_fuzzer()
     physics() # should always be last thing called
 
     line[0] = plot1.update(altitude)
     line[1] = plot2.update(velocity)
-    line[2] = plot3.update(deploy_angle) 
+    line[2] = plot3.update(actual_angle) 
 
     return line
 
