@@ -8,6 +8,7 @@ import matplotlib.animation as animation
 
 TIMESTEP = 0.01 #s
 GRAVITY = -9.80 # m/s/s
+DELAY = 0.1 # s
 
 class Plotter:
     def __init__(self, minValue, maxValue, fig):
@@ -45,12 +46,15 @@ mass = 0.650 # kg
 force = 0
 altitude = 0
 velocity = 0
-deploy_angle = 0
+deploy_angle = [0]
+deploy_time = [0]
+commanded_angle = 0
+actual_angle = 0
 def calc_drag():
     a = -0.00000407762
     b = 1.54521
     c = -0.0009436
-    cd = a * pow(deploy_angle, b) + c
+    cd = a * pow(actual_angle, b) + c
     return cd * pow(velocity, 2)
 
 current_time = 0
@@ -67,7 +71,7 @@ state = 0
 
 burn_begins = 0
 begins = 0
-wait_for = 5 # s
+wait_for = 6 # s
 def wait_for_liftoff():
     global state, burn_begins, altitude, velocity
     altitude = 0
@@ -103,8 +107,9 @@ def send_data():
     if arduino.in_waiting > 0:
         data = arduino.readline()
         try:
-            deploy_angle = float(data)
-            
+            deploy_angle.append(float(data))
+            deploy_time.append(current_time)
+            angle_fuzzer()
             #print(deploy_angle)
             #print(data)
             #print(velocity)
@@ -114,6 +119,25 @@ def send_data():
             print("bad transmission") 
         #deploy_angle = float(arduino.readline())
         #print(deploy_angle)
+
+commanded_time = 0
+from_angle = 0
+def angle_fuzzer():
+    global commanded_angle, actual_angle, commanded_time
+    if current_time - deploy_time[0] > DELAY and len(deploy_angle) > 0:
+        if deploy_angle[0] != actual_angle:
+            from_angle = actual_angle
+        commanded_angle = deploy_angle[0]
+        deploy_angle.pop(0)
+        commanded_time = deploy_time[0]
+        deploy_time.pop(0)
+    if current_time - commanded_angle < DELAY:
+        actual_angle = ((from_angle - commanded_angle)/2) * math.cos((1/DELAY) * 3.14159 * (current_time - commanded_angle)) + ((from_angle + commanded_angle)/2)
+    else:
+        actual_angle = commanded_angle
+    
+
+
 max_alt = 0
 def physics():
     global altitude, velocity, force, max_alt
@@ -144,7 +168,7 @@ def update(i):
 
     line[0] = plot1.update(altitude)
     line[1] = plot2.update(velocity)
-    line[2] = plot3.update(deploy_angle) 
+    line[2] = plot3.update(actual_angle) 
 
     return line
 

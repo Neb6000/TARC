@@ -9,14 +9,14 @@
 // ATTENTION !!!!!!!!!
 //
 
-float TIMESTEP = 0.05; // s
+float TIMESTEP = 0.5; // s
 float MASS = 0.650; // kg
 float GRAVITY = -9.80; // m/s/s
 float TARGET_APOGEE = 254.508; //  m
 float DRY_MASS = 0.650; // kg
 float DRY_WEIGHT = DRY_MASS * GRAVITY; // N
 
-float SEARCH_FOR = 100.0f; // milliseconds, how long to stay in loop looking for ideal cd before saving state and cycling through rest of state machine
+float SEARCH_FOR = 50.0f; // milliseconds, how long to stay in loop looking for ideal cd before saving state and cycling through rest of state machine
 float OLD_DATA = 1.0f; // seconds, any sensor data older than this is discarded
 int ARMING_DELAY = 5.0f; // how long, in seconds, between when the flight computer is turned on and when it should be ready on the launchpad
 float TAKEOFF_THRESHOLD = 10.0f; // m/s,  when we go faster than this, computer thinks we have tacken off
@@ -26,9 +26,9 @@ float BURNOUT_ACCELERATION_THRESHOLD = -8.0f; // m/s/s, when acceleration is mor
 float MIN_CD = 0.000944f;
 float MAX_CD = 0.00521f;
 
-float MAX_ERROR = 1.0f; // m
+float MAX_ERROR = 0.50f; // m
 
-float VELOCITY_DELTA_T = 0.1f; //how many seconds between velocity update cycles
+float VELOCITY_DELTA_T = 0.2f; //how many seconds between velocity update cycles
 
 Servo airbrakes;
 float deploy_angle = 0.0f;
@@ -52,8 +52,9 @@ float cd = 0.0f;
 float v_running;
 float a_running;
 float target_alt;
+float prev_cd = 0;
 float alt_finder(){ // prevents overshoot by making target altitude decrease linearly with flight altitude, equalling actual target altitude at that altitude
-    float a = -0.05;
+    float a = -0.02;
     //float b = TARGET_APOGEE;
     return a * (a_running - TARGET_APOGEE) + TARGET_APOGEE;
 }
@@ -93,10 +94,12 @@ float cd_finder(float velocity, float altitude){
 
         if(millis() - t > SEARCH_FOR){ // make sure not to get hung up in this loop
             still_running = true;
-            return deploy_angle;
+            //return deploy_angle;
+            return prev_cd;
             break;
         }
     }
+    prev_cd = cd;
     return cd;
 }
 
@@ -160,10 +163,10 @@ float velocity = 0.0f;
             }
 
             //calculate velocity
-            if(time - previous_vel_time > VELOCITY_DELTA_T){
-                velocity = (altitude - previous_altitude) / (time - previous_vel_time);
+            if((millis()/1000.0f) - previous_vel_time > VELOCITY_DELTA_T){
+                velocity = (altitude - previous_altitude) / ((millis()/1000.0f) - previous_vel_time);
                 previous_altitude = altitude;
-                previous_vel_time = time;
+                previous_vel_time = (millis()/1000.0f);
                 //Serial.println(altitude);
             }
 
@@ -216,9 +219,9 @@ void wait_for_arming(){
         began_waiting_for_arming = time;
     }
     if(time - began_waiting_for_arming > ARMING_DELAY){
-
+        previous_vel_time = millis()/1000.0f;
         state ++;
-        //Serial.println(state);
+        Serial.println("q");
     }
 }
 
@@ -231,7 +234,7 @@ void wait_for_ignition(){
     if(velocity > TAKEOFF_THRESHOLD){
         previous_velocity = velocity;
         state ++;
-        //Serial.println(state);
+        Serial.println("s");
     }
 }
 
@@ -249,7 +252,7 @@ void wait_for_burnout(){
     }
     if(acceleration < BURNOUT_ACCELERATION_THRESHOLD){
         state ++;
-        //Serial.println(state);
+        Serial.println("S");
     }
 }
 
@@ -263,7 +266,7 @@ void apogee_correction(){
     float c = -0.0009436;
     float cd = -cd_finder(velocity, altitude);
     deploy_angle = pow((cd - c) / a, 1/b); //cd = a * pow(deploy_angle, b) + c
-    //airbrakes.write(deploy_angle);
+    airbrakes.write(deploy_angle);
     
 }
 
@@ -272,7 +275,7 @@ void apogee_correction(){
 void setup(){
     Serial.begin(115200);
     Serial.setTimeout(1);
-    //airbrakes.attach(9);
+    airbrakes.attach(9);
     delay(1000);
 }
 
