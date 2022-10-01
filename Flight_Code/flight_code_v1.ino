@@ -9,14 +9,14 @@
 // ATTENTION !!!!!!!!!
 //
 
-float TIMESTEP = 0.5; // s
+float TIMESTEP = 0.1; // s
 float MASS = 0.650; // kg
 float GRAVITY = -9.80; // m/s/s
 float TARGET_APOGEE = 254.508; //  m
 float DRY_MASS = 0.650; // kg
 float DRY_WEIGHT = DRY_MASS * GRAVITY; // N
 
-float SEARCH_FOR = 50.0f; // milliseconds, how long to stay in loop looking for ideal cd before saving state and cycling through rest of state machine
+float SEARCH_FOR = 20.0f; // milliseconds, how long to stay in loop looking for ideal cd before saving state and cycling through rest of state machine
 float OLD_DATA = 1.0f; // seconds, any sensor data older than this is discarded
 int ARMING_DELAY = 5.0f; // how long, in seconds, between when the flight computer is turned on and when it should be ready on the launchpad
 float TAKEOFF_THRESHOLD = 10.0f; // m/s,  when we go faster than this, computer thinks we have tacken off
@@ -55,7 +55,6 @@ float target_alt;
 float prev_cd = 0;
 float alt_finder(){ // prevents overshoot by making target altitude decrease linearly with flight altitude, equalling actual target altitude at that altitude
     float a = -0.02;
-    //float b = TARGET_APOGEE;
     return a * (a_running - TARGET_APOGEE) + TARGET_APOGEE;
 }
 float cd_finder(float velocity, float altitude){
@@ -78,7 +77,7 @@ float cd_finder(float velocity, float altitude){
     }
     while(true){
 
-        cd = (min_cd + max_cd)/2;
+        cd = (min_cd + max_cd)/2.0;
         float alt = apogee_finder(v_running, a_running, cd);
 
         if (abs(alt-target_alt) < MAX_ERROR){ //converged
@@ -96,7 +95,6 @@ float cd_finder(float velocity, float altitude){
             still_running = true;
             //return deploy_angle;
             return prev_cd;
-            break;
         }
     }
     prev_cd = cd;
@@ -264,8 +262,8 @@ void apogee_correction(){
     float a = -0.00000407762;
     float b = 1.54521;
     float c = -0.0009436;
-    float cd = -cd_finder(velocity, altitude);
-    deploy_angle = pow((cd - c) / a, 1/b); //cd = a * pow(deploy_angle, b) + c
+    float calculated_cd = -cd_finder(velocity, altitude);
+    deploy_angle = pow((calculated_cd - c) / a, 1/b); //cd = a * pow(deploy_angle, b) + c
     airbrakes.write(deploy_angle);
     
 }

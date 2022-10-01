@@ -6,7 +6,7 @@ import datetime as dt
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
-TIMESTEP = 0.01 #s
+TIMESTEP = 0.5 #s
 MASS = 0.650 # kg
 GRAVITY = -9.80 # m/s/s
 TARGET_APOGEE = 254.508 # m
@@ -14,9 +14,11 @@ TARGET_APOGEE = 254.508 # m
 MIN_CD = 0.000944
 MAX_CD = 0.00521
 
-MAX_ERROR = 1 # m
+MAX_ERROR = 0.1 # m
 
-DELAY = 0.9 # s, time between commanded angle and actual angle
+CD_FINDER_DELAY = 0.1 # s
+
+DELAY = 0.3 # s, time between commanded angle and actual angle
 
 def apogee_finder(velocity, altitude, cd):
     #time = 0
@@ -31,7 +33,7 @@ def apogee_finder(velocity, altitude, cd):
 
 
 def alt_finder(alt):
-    a = 0 #-0.05
+    a = -0.05
     return a * (alt - TARGET_APOGEE) + TARGET_APOGEE
 
 def cd_finder(velocity, altitude):
@@ -154,23 +156,30 @@ def angle_fuzzer():
         deploy_time.pop(0)
     actual_angle = commanded_angle
 
+previous_dep = 0
+last_run_time = 0
+
 def active_control():
-    global deploy_angle
-    a = -0.00000407762
-    b = 1.54521
-    c = -0.0009436
-    cd = -cd_finder(velocity, altitude)
-    dep = pow((cd - c) / a, 1/b)
-    dep_angle = 0
-    if dep < 0:
+    global deploy_angle, previous_dep, last_run_time
+    if current_time - last_run_time > CD_FINDER_DELAY:
+        a = -0.00000407762
+        b = 1.54521
+        c = -0.0009436
+        cd = -cd_finder(velocity, altitude)
+        dp = pow((cd - c) / a, 1/b)
+        dep = dp + (dp - previous_dep) * 0.5
+        previous_dep = dep
         dep_angle = 0
-    elif dep > 90:
-        dep_angle = 90
-    else:
-        dep_angle = dep
-    deploy_angle.append(dep_angle)
-    deploy_time.append(current_time)
-    angle_fuzzer()
+        if dep < 0:
+            dep_angle = 0
+        elif dep > 90:
+            dep_angle = 90
+        else:
+            dep_angle = dep
+        deploy_angle.append(dep_angle)
+        deploy_time.append(current_time)
+        angle_fuzzer()
+        last_run_time = current_time
 
 
 max_alt = 0
